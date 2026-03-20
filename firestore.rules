@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isStudioMember(studioId) {
+      return isAuthenticated() && (
+        get(/databases/$(database)/documents/studios/$(studioId)).data.members.hasAny([request.auth.uid]) ||
+        get(/databases/$(database)/documents/studios/$(studioId)).data.ownerId == request.auth.uid
+      );
+    }
+
+    // User Rules
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
+    }
+
+    // Studio Rules
+    match /studios/{studioId} {
+      allow read: if isStudioMember(studioId);
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && get(/databases/$(database)/documents/studios/$(studioId)).data.ownerId == request.auth.uid;
+      
+      // Project Rules
+      match /projects/{projectId} {
+        allow read, write: if isStudioMember(studioId);
+        
+        // Task Rules
+        match /tasks/{taskId} {
+          allow read, write: if isStudioMember(studioId);
+        }
+      }
+    }
+  }
+}
